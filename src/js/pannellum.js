@@ -1912,7 +1912,13 @@ function createHotSpot(hs) {
             div.onclick = div.ontouchend = function() {
                 if (!div.clicked) {
                     div.clicked = true;
-                    loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
+                    if (typeof hs.preloadHandler === "function") {
+                        hs.preloadHandler(function() {
+                            loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
+                        })
+                    } else {
+                        loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
+                    }
                 }
                 return false;
             };
