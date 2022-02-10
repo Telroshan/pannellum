@@ -70,9 +70,10 @@ function Renderer(container, context) {
      * @param {number} vaov - Initial vertical angle of view.
      * @param {number} voffset - Initial vertical offset angle.
      * @param {function} callback - Load callback function.
+     * @param {function} errorCallback - Error callback function.
      * @param {Object} [params] - Other configuration parameters (`horizonPitch`, `horizonRoll`, `backgroundColor`).
      */
-    this.init = function(_image, _imageType, _dynamic, haov, vaov, voffset, callback, params) {
+    this.init = function(_image, _imageType, _dynamic, haov, vaov, voffset, callback, errorCallback, params) {
         // Default argument for image type
         if (_imageType === undefined)
             _imageType = 'equirectangular';
@@ -663,15 +664,16 @@ function Renderer(container, context) {
                 gl.useProgram(program);
             }
         }
-
-        // Check if there was an error
-        var err = gl.getError();
-        if (err !== 0) {
-            console.log('Error: Something went wrong with WebGL!', err);
-            throw {type: 'webgl error'};
-        }
-
+        
         callback();
+        setTimeout(function() {
+            // Check if there was an error
+            var err = gl.getError();
+            if (err !== 0) {
+                console.error('Error: Something went wrong with WebGL!', err);
+                errorCallback();
+            }
+        }, 0);
      };
 
     /**
