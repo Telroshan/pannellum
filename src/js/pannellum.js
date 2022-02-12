@@ -547,6 +547,24 @@ function onImageLoad() {
 }
 
 /**
+ * @param {string} field
+ * @returns {boolean}
+ */
+function xmpShouldOverride(field) {
+    if (!config.scene) {
+        return true;
+    }
+    var sceneIds = Object.keys(config.scenes);
+    for (var i = 0; i < sceneIds.length; i++) {
+        var sceneId = sceneIds[i];
+        if (sceneId === config.scene) {
+            return (typeof config.scenes[sceneId].yaw !== "number");
+        }
+    }
+    return true;
+}
+
+/**
  * Parses Google Photo Sphere XMP Metadata.
  * https://developers.google.com/photo-sphere/metadata/
  * @private
@@ -625,9 +643,9 @@ function parseGPanoXMP(image, url) {
                         config.horizonRoll = xmp.horizonRoll;
                 }
                 
-                if (xmp.pitch != null && specifiedPhotoSphereExcludes.indexOf('pitch') < 0)
+                if (xmp.pitch != null && specifiedPhotoSphereExcludes.indexOf('pitch') < 0 && xmpShouldOverride("pitch"))
                     config.pitch = xmp.pitch;
-                if (xmp.yaw != null && specifiedPhotoSphereExcludes.indexOf('yaw') < 0)
+                if (xmp.yaw != null && specifiedPhotoSphereExcludes.indexOf('yaw') < 0 && xmpShouldOverride("yaw"))
                     config.yaw = xmp.yaw;
                 if (xmp.hfov != null && specifiedPhotoSphereExcludes.indexOf('hfov') < 0)
                     config.hfov = xmp.hfov;
