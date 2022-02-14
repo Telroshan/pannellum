@@ -102,8 +102,8 @@
 }
 
 .pnlm-zoom-controls {
-    width: 30px;
-    height: 60px;
+    width: 34px;
+    height: 68px;
 }
 
 .pnlm-zoom-in {
@@ -112,7 +112,7 @@
     position: absolute;
     top: 0;
     border-radius: 3px 3px 0 0;
-    background-position: 2px 0px;
+    background-position: 4px 2px;
 }
 
 .pnlm-zoom-out {
@@ -120,15 +120,15 @@
     height: 50%;
     position: absolute;
     bottom: 0;
-    background-position: 2px -24px;
+    background-position: 4px -22px;
     border-top: 1px solid #ddd;
     border-top-color: rgba(0,0,0,0.10);
     border-radius: 0 0 3px 3px;
 }
 
 .pnlm-fullscreen-toggle-button, .pnlm-orientation-button {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
 }
 
 .pnlm-hot-spot-debug-indicator {
@@ -144,19 +144,19 @@
 }
 
 .pnlm-orientation-button-inactive {
-    background-position: 2px -154px;
+    background-position: 4px -152px;
 }
 
 .pnlm-orientation-button-active {
-    background-position: 2px -180px;
+    background-position: 4px -178px;
 }
 
 .pnlm-fullscreen-toggle-button-inactive {
-    background-position: 2px -50px;
+    background-position: 4px -48px;
 }
 
 .pnlm-fullscreen-toggle-button-active {
-    background-position: 2px -76px;
+    background-position: 4px -74px;
 }
 
 .pnlm-panorama-info {
