@@ -78,7 +78,7 @@
 }
 
 .pnlm-controls {
-    margin-top: 4px;
+    margin-top: 8px;
     background-color: #fff;
     border: 1px solid #999;
     border-color: rgba(0,0,0,0.4);
@@ -88,6 +88,10 @@
     /* Fix Safari fullscreen bug */
     -webkit-transform: translateZ(9999px);
     transform: translateZ(9999px);
+}
+
+.pnlm-controls:first-child {
+    margin-top: 4px;
 }
 
 .pnlm-control:hover {
