@@ -3315,6 +3315,9 @@ this.isOrientationActive = function() {
 this.on = function(type, listener) {
     externalEventListeners[type] = externalEventListeners[type] || [];
     externalEventListeners[type].push(listener);
+    if (type === 'load' && loaded === true) {
+        listener()
+    }
     return this;
 };
 
