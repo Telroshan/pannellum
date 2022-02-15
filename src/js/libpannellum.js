@@ -929,12 +929,41 @@ function Renderer(container, context) {
             }
             
             // Allow one request to be pending, so that we can create a texture buffer for that in advance of loading actually beginning
-            if (pendingTextureRequests.length === 0) {
+            if (!usingWorker && pendingTextureRequests.length === 0) {
                 for (i = 0; i < program.currentNodes.length; i++) {
                     var node = program.currentNodes[i];
                     if (!node.texture && !node.textureLoad) {
                         node.textureLoad = true;
-            
+                        
+                        setTimeout(processNextTile, 0, node);
+                        
+                        // Only process one tile per frame to improve responsiveness
+                        break;
+                    }
+                }
+            } else if (usingWorker) {
+                var allLevelsTexturesLoaded = true;
+                var level = 1;
+
+                for (i = 0; i < program.currentNodes.length; i++) {
+                    var node = program.currentNodes[i];
+                    // If we reach a higher level in this loop, it means the previous level is completely loaded
+                    if (node.level > level) {
+                        // If the previous level's texture haven't all been loaded, don't process higher res ones yet
+                        if (!allLevelsTexturesLoaded) {
+                            break;
+                        }
+                        level = node.level;
+                        allLevelsTexturesLoaded = true;
+                    }
+
+                    if (!node.textureLoaded) {
+                        allLevelsTexturesLoaded = false;
+                    }
+
+                    if (!node.texture && !node.textureLoad) {
+                        node.textureLoad = true;
+                        
                         setTimeout(processNextTile, 0, node);
                         
                         // Only process one tile per frame to improve responsiveness
@@ -1458,7 +1487,9 @@ function Renderer(container, context) {
 
     // Load images in separate thread when possible
     var processNextTile;
+    var usingWorker = false;
     if (window.Worker && window.createImageBitmap) {
+        usingWorker = true
         function workerFunc() {
             self.onmessage = function(e) {
                 var path = e.data[0],
