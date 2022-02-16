@@ -1930,12 +1930,13 @@ function createHotSpot(hs) {
             div.onclick = div.ontouchend = function() {
                 if (!div.clicked) {
                     div.clicked = true;
-                    renderer.abortImageRequests();
                     if (typeof hs.preloadHandler === "function") {
                         hs.preloadHandler(function() {
+                            renderer.abortImageRequests();
                             loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
                         })
                     } else {
+                        renderer.abortImageRequests();
                         loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
                     }
                 }
