@@ -58,7 +58,7 @@ function Renderer(container, context) {
      * Aborts all ongoing image requests. Useful when transitioning between scenes to let the browser
      * download the new images faster.
      */
-    this.abort = function() {
+    this.abortImageRequests = function() {
         if (worker) {
             worker.postMessage("ABORT");
         }
