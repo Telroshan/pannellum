@@ -1930,6 +1930,7 @@ function createHotSpot(hs) {
             div.onclick = div.ontouchend = function() {
                 if (!div.clicked) {
                     div.clicked = true;
+                    renderer.abortImageRequests();
                     if (typeof hs.preloadHandler === "function") {
                         hs.preloadHandler(function() {
                             loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
@@ -3104,7 +3105,10 @@ this.mouseEventToCoords = function(event) {
  */
 this.loadScene = function(sceneId, pitch, yaw, hfov) {
     if (loaded !== false)
+    {
+        renderer.abortImageRequests();
         loadScene(sceneId, pitch, yaw, hfov);
+    }
     return this;
 };
 

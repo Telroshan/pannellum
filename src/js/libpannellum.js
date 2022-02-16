@@ -55,6 +55,16 @@ function Renderer(container, context) {
         gl = context;
 
     /**
+     * Aborts all ongoing image requests. Useful when transitioning between scenes to let the browser
+     * download the new images faster.
+     */
+    this.abort = function() {
+        if (worker) {
+            worker.postMessage("ABORT");
+        }
+    }
+
+    /**
      * Initialize renderer.
      * @memberof Renderer
      * @instance
@@ -929,7 +939,7 @@ function Renderer(container, context) {
             }
             
             // Allow one request to be pending, so that we can create a texture buffer for that in advance of loading actually beginning
-            if (!usingWorker && pendingTextureRequests.length === 0) {
+            if (!worker && pendingTextureRequests.length === 0) {
                 for (i = 0; i < program.currentNodes.length; i++) {
                     var node = program.currentNodes[i];
                     if (!node.texture && !node.textureLoad) {
@@ -941,7 +951,7 @@ function Renderer(container, context) {
                         break;
                     }
                 }
-            } else if (usingWorker) {
+            } else if (worker) {
                 var allLevelsTexturesLoaded = true;
                 var level = 1;
 
@@ -1487,16 +1497,24 @@ function Renderer(container, context) {
 
     // Load images in separate thread when possible
     var processNextTile;
-    var usingWorker = false;
+    var worker;
     if (window.Worker && window.createImageBitmap) {
-        usingWorker = true
         function workerFunc() {
+            var controller = new AbortController();
+            var abortSignal = controller.signal;
             self.onmessage = function(e) {
+                if (typeof e.data === "string" && e.data === "ABORT") {
+                    controller.abort()
+                    controller = new AbortController();
+                    abortSignal = controller.signal;
+                    return
+                }
                 var path = e.data[0],
                     crossOrigin = e.data[1];
                 fetch(path, {
                     mode: 'cors',
-                    credentials: crossOrigin == 'use-credentials' ? 'include' : 'same-origin'
+                    credentials: crossOrigin == 'use-credentials' ? 'include' : 'same-origin',
+                    signal: abortSignal,
                 }).then(function(response) {
                     return response.blob();
                 }).then(function(blob) {
@@ -1509,8 +1527,8 @@ function Renderer(container, context) {
             };
         }
         var workerFuncBlob = new Blob(['(' + workerFunc.toString() + ')()'], {type: 'application/javascript'}),
-            worker = new Worker(URL.createObjectURL(workerFuncBlob)),
             texturesLoading = {};
+        worker = new Worker(URL.createObjectURL(workerFuncBlob))
         worker.onmessage = function(e) {
             var path = e.data[0],
                 success = e.data[1],
