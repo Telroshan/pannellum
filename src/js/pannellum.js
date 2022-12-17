@@ -558,7 +558,7 @@ function xmpShouldOverride(field) {
     for (var i = 0; i < sceneIds.length; i++) {
         var sceneId = sceneIds[i];
         if (sceneId === config.scene) {
-            return (typeof config.scenes[sceneId].yaw !== "number");
+            return (typeof config.scenes[sceneId][field] !== "number");
         }
     }
     return true;
