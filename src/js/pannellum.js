@@ -3403,6 +3403,11 @@ this.destroy = function() {
     container.classList.remove('pnlm-container');
 };
 
+/** @returns {bool} */
+this.isUserInteracting = function() {
+    return isUserInteracting;
+}
+
 }
 
 return {
