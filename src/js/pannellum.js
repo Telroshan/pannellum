@@ -2944,6 +2944,36 @@ this.lookAt = function(pitch, yaw, hfov, animated, callback, callbackArgs) {
 };
 
 /**
+ * Set a new view, without animation, and batching render calls
+ * @memberof Viewer
+ * @instance
+ * @param {number} [pitch] - Target pitch
+ * @param {number} [yaw] - Target yaw
+ * @param {number} [hfov] - Target HFOV
+ * @returns {Viewer} `this`
+ */
+this.setPitchYawHfov = function(pitch, yaw, hfov) {
+    var changed = false
+    if (pitch !== undefined && Math.abs(pitch - config.pitch) > eps) {
+        changed = true
+        config.pitch = pitch;
+    }
+    if (yaw !== undefined && Math.abs(yaw - config.yaw) > eps) {
+        changed = true
+        config.yaw = yaw;
+    }
+    if (hfov !== undefined && Math.abs(hfov - config.hfov) > eps) {
+        changed = true
+        setHfov(hfov);
+    }
+    if (changed) {
+        latestInteraction = Date.now();
+        animateInit();
+    }
+    return this;
+}
+
+/**
  * Returns the panorama's north offset.
  * @memberof Viewer
  * @instance
