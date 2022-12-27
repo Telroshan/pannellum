@@ -68,9 +68,11 @@ var config,
     externalEventListeners = {},
     specifiedPhotoSphereExcludes = [],
     update = false, // Should we update when still to render dynamic content
+    updateOnce = false,
     eps = 1e-6,
     resizeObserver,
     hotspotsCreated = false,
+    xhr,
     destroyed = false;
 
 var defaultConfig = {
@@ -275,7 +277,8 @@ controls.orientation.addEventListener('pointerdown', function(e) {e.stopPropagat
 controls.orientation.className = 'pnlm-orientation-button pnlm-orientation-button-inactive pnlm-sprite pnlm-controls pnlm-control';
 var orientationSupport = false;
 if (window.DeviceOrientationEvent && location.protocol == 'https:' &&
-    navigator.userAgent.toLowerCase().indexOf('mobi') >= 0) {
+    (navigator.userAgent.toLowerCase().indexOf('mobi') >= 0 ||
+    (/* iPad */ navigator.userAgent.indexOf("Mac") >= 0 && navigator.maxTouchPoints && navigator.maxTouchPoints > 0))) {
     // This user agent check is here because there's no way to check if a
     // device has an inertia measurement unit. We used to be able to check if a
     // DeviceOrientationEvent had non-null values, but with iOS 13 requiring a
@@ -411,7 +414,7 @@ function init() {
                 onImageLoad();
             };
             
-            var xhr = new XMLHttpRequest();
+            xhr = new XMLHttpRequest();
             xhr.onloadend = function() {
                 if (xhr.status != 200) {
                     // Display error if image can't be loaded
@@ -419,6 +422,7 @@ function init() {
                     a.href = p;
                     a.textContent = a.href;
                     anError(config.strings.fileAccessError.replace('%s', a.outerHTML));
+                    return;
                 }
                 var img = this.response;
                 parseGPanoXMP(img, p);
@@ -1665,7 +1669,9 @@ function render() {
             maxPitch = 90;
         config.pitch = Math.max(minPitch, Math.min(maxPitch, config.pitch));
         
-        renderer.render(config.pitch * Math.PI / 180, config.yaw * Math.PI / 180, config.hfov * Math.PI / 180, {roll: config.roll * Math.PI / 180});
+        renderer.render(config.pitch * Math.PI / 180, config.yaw * Math.PI / 180, config.hfov * Math.PI / 180, {roll: config.roll * Math.PI / 180, dynamic: update});
+        if (updateOnce)
+            updateOnce = update = false;
         
         renderHotSpots();
         
@@ -1798,7 +1804,7 @@ function renderInit() {
             params.horizonRoll = config.horizonRoll * Math.PI / 180;
         if (config.backgroundColor !== undefined)
             params.backgroundColor = config.backgroundColor;
-        renderer.init(panoImage, config.type, config.dynamic, config.haov * Math.PI / 180, config.vaov * Math.PI / 180, config.vOffset * Math.PI / 180, renderInitCallback, anError, params);
+        renderer.init(panoImage, config.type, config.haov * Math.PI / 180, config.vaov * Math.PI / 180, config.vOffset * Math.PI / 180, renderInitCallback, anError, params);
         if (config.dynamic !== true) {
             // Allow image to be garbage collected
             panoImage = undefined;
@@ -1871,6 +1877,7 @@ function createHotSpot(hs) {
     hs.yaw = Number(hs.yaw) || 0;
 
     var div = document.createElement('div');
+    div.tabIndex = -1;
     div.className = 'pnlm-hotspot-base';
     if (hs.cssClass)
         div.className += ' ' + hs.cssClass;
@@ -3076,6 +3083,24 @@ this.getRenderer = function() {
  */
 this.setUpdate = function(bool) {
     update = bool === true;
+    if (update) {
+        updateOnce = false;
+        if (renderer === undefined)
+            onImageLoad();
+        else
+            animateInit();
+    }
+    return this;
+};
+
+/**
+ * Sets update flag for dynamic content for one frame.
+ * @memberof Viewer
+ * @instance
+ * @returns {Viewer} `this`
+ */
+this.updateOnce = function() {
+    updateOnce = true;
     if (renderer === undefined)
         onImageLoad();
     else
@@ -3144,7 +3169,7 @@ this.addScene = function(sceneId, config) {
  * @returns {boolean} False if the scene is the current scene or if the scene doesn't exists, else true
  */
 this.removeScene = function(sceneId) {
-    if (config.scene === sceneId || !initialConfig.scenes.hasOwnProperty(sceneId))
+    if (config.scene == sceneId || !initialConfig.scenes.hasOwnProperty(sceneId))
         return false;
     delete initialConfig.scenes[sceneId];
     return true;
@@ -3231,7 +3256,7 @@ this.removeHotSpot = function(hotSpotId, sceneId) {
             return false;
         for (var i = 0; i < config.hotSpots.length; i++) {
             if (config.hotSpots[i].hasOwnProperty('id') &&
-                config.hotSpots[i].id === hotSpotId) {
+                config.hotSpots[i].id == hotSpotId) {
                 // Delete hot spot DOM elements
                 var current = config.hotSpots[i].div;
                 while (current.parentNode != uiContainer)
@@ -3249,7 +3274,7 @@ this.removeHotSpot = function(hotSpotId, sceneId) {
                 return false;
             for (var j = 0; j < initialConfig.scenes[sceneId].hotSpots.length; j++) {
                 if (initialConfig.scenes[sceneId].hotSpots[j].hasOwnProperty('id') &&
-                    initialConfig.scenes[sceneId].hotSpots[j].id === hotSpotId) {
+                    initialConfig.scenes[sceneId].hotSpots[j].id == hotSpotId) {
                     // Remove hot spot from configuration
                     initialConfig.scenes[sceneId].hotSpots.splice(j, 1);
                     return true;
@@ -3379,6 +3404,12 @@ this.destroy = function() {
     destroyed = true;
     clearTimeout(autoRotateStart);
 
+    if (xhr)
+        xhr.abort();
+    if (Array.isArray(panoImage)) {
+        for (var i = 0; i < 6; i++)
+            panoImage[i].src = '';
+    }
     if (renderer)
         renderer.destroy();
     if (listenersAdded) {

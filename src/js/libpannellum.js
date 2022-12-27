@@ -45,7 +45,7 @@ function Renderer(container, context) {
     var world;
     var vtmps;
     var pose;
-    var image, imageType, dynamic;
+    var image, imageType;
     var texCoordBuffer, cubeVertBuf, cubeVertTexCoordBuf, cubeVertIndBuf;
     var globalParams;
     var sides = ['f', 'b', 'u', 'd', 'l', 'r'];
@@ -75,7 +75,6 @@ function Renderer(container, context) {
      *      configuration object.
      * @param {string} imageType - The type of the image: `equirectangular`,
      *      `cubemap`, or `multires`.
-     * @param {boolean} dynamic - Whether or not the image is dynamic (e.g., video).
      * @param {number} haov - Initial horizontal angle of view.
      * @param {number} vaov - Initial vertical angle of view.
      * @param {number} voffset - Initial vertical offset angle.
@@ -83,7 +82,7 @@ function Renderer(container, context) {
      * @param {function} errorCallback - Error callback function.
      * @param {Object} [params] - Other configuration parameters (`horizonPitch`, `horizonRoll`, `backgroundColor`).
      */
-    this.init = function(_image, _imageType, _dynamic, haov, vaov, voffset, callback, errorCallback, params) {
+    this.init = function(_image, _imageType, haov, vaov, voffset, callback, errorCallback, params) {
         // Default argument for image type
         if (_imageType === undefined)
             _imageType = 'equirectangular';
@@ -96,7 +95,6 @@ function Renderer(container, context) {
 
         imageType = _imageType;
         image = _image;
-        dynamic = _dynamic;
         globalParams = params || {};
 
         // Clear old data
@@ -509,7 +507,7 @@ function Renderer(container, context) {
             }
 
             // Set parameters for rendering any size
-            if (imageType != "cubemap" && image.width <= maxWidth &&
+            if (imageType != "cubemap" && image.width && image.width <= maxWidth &&
                 haov == 2 * Math.PI && (image.width & (image.width - 1)) == 0)
                 gl.texParameteri(glBindType, gl.TEXTURE_WRAP_S, gl.REPEAT); // Only supported for power-of-two images in WebGL 1
             else
@@ -548,8 +546,6 @@ function Renderer(container, context) {
             program.perspUniform = gl.getUniformLocation(program, 'u_perspMatrix');
             program.cubeUniform = gl.getUniformLocation(program, 'u_cubeMatrix');
             //program.colorUniform = gl.getUniformLocation(program, 'u_color');
-
-            program.level = -1;
 
             program.currentNodes = [];
             program.nodeCache = [];
@@ -761,6 +757,8 @@ function Renderer(container, context) {
      * @param {Object} [params] - Extra configuration parameters. 
      * @param {number} [params.roll] - Camera roll (in radians).
      * @param {string} [params.returnImage] - Return rendered image? If specified, should be 'ImageBitmap', 'image/jpeg', or 'image/png'.
+     * @param {function} [params.hook] - Hook for executing arbitrary function in this environment.
+     * @param {boolean} [params.dynamic] - Whether or not the image is dynamic (e.g., video) and should be updated.
      */
     this.render = function(pitch, yaw, hfov, params) {
         var focal, i, s, roll = 0;
@@ -768,6 +766,8 @@ function Renderer(container, context) {
             params = {};
         if (params.roll)
             roll = params.roll;
+        if (params.dynamic)
+            var dynamic = params.dynamic;
 
         // Apply pitch and roll transformation if applicable
         if (pose !== undefined) {
@@ -801,6 +801,20 @@ function Renderer(container, context) {
             if (v[2] < 0)
                 roll_adj = 2 * Math.PI - roll_adj;
             roll += roll_adj;
+        }
+
+        // Execute function hook
+        if (params.hook) {
+            params.hook({
+                gl: gl,
+                program: program,
+                previewProgram: previewProgram,
+                imageType: imageType,
+                texCoordBuffer: texCoordBuffer,
+                cubeVertBuf: cubeVertBuf,
+                cubeVertTexCoordBuf: cubeVertTexCoordBuf,
+                cubeVertIndBuf: cubeVertIndBuf
+            });
         }
 
         // If no WebGL
@@ -894,9 +908,7 @@ function Renderer(container, context) {
 
             // Create perspective matrix
             var perspMatrix = makePersp(hfov, gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 100.0);
-            
-            // Find correct zoom level
-            checkZoom(hfov);
+            var perspMatrixNoClip = makePersp(hfov, gl.drawingBufferWidth / gl.drawingBufferHeight, -100.0, 100.0);
             
             // Create rotation matrix
             var matrix = identityMatrix3();
@@ -911,6 +923,7 @@ function Renderer(container, context) {
             
             // Find current nodes
             var rotPersp = rotatePersp(perspMatrix, matrix);
+            var rotPerspNoClip = rotatePersp(perspMatrixNoClip, matrix);
             program.nodeCache.sort(multiresNodeSort);
             if (program.nodeCache.length > 200 &&
                 program.nodeCache.length > program.currentNodes.length + 50) {
@@ -925,7 +938,7 @@ function Renderer(container, context) {
             
             for (s = 0; s < 6; s++) {
                 var ntmp = new MultiresNode(vtmps[s], sides[s], 1, 0, 0, image.fullpath, null);
-                testMultiresNode(rotPersp, ntmp, pitch, yaw, hfov);
+                testMultiresNode(rotPersp, rotPerspNoClip, ntmp, pitch, yaw, hfov);
             }
             
             program.currentNodes.sort(multiresNodeRenderSort);
@@ -1099,12 +1112,18 @@ function Renderer(container, context) {
                 gl.clear(gl.COLOR_BUFFER_BIT);
             // Determine tiles that need to be drawn
             var node_paths = {};
-            for (var i = 0; i < program.currentNodes.length; i++)
-                node_paths[program.currentNodes[i].parentPath] |= !(program.currentNodes[i].textureLoaded > 1); // !(undefined > 1) != (undefined <= 1)
+            for (var i = 0; i < program.currentNodes.length; i++) {
+                if (node_paths[program.currentNodes[i].parentPath] === undefined)
+                    node_paths[program.currentNodes[i].parentPath] = 0
+                node_paths[program.currentNodes[i].parentPath] += !(program.currentNodes[i].textureLoaded > 1); // !(undefined > 1) != (undefined <= 1)
+            }
             // Draw tiles
             for (var i = 0; i < program.currentNodes.length; i++) {
+                // This optimization that doesn't draw a node if all its children
+                // will be drawn ignores the fact that some nodes don't have
+                // four children; these tiles are always drawn.
                 if (program.currentNodes[i].textureLoaded > 1 &&
-                    node_paths[program.currentNodes[i].path] != 0) { // 1 or undefined
+                    node_paths[program.currentNodes[i].path] != 4) {
                     //var color = program.currentNodes[i].color;
                     //gl.uniform4f(program.colorUniform, color[0], color[1], color[2], 1.0);
                     
@@ -1138,7 +1157,10 @@ function Renderer(container, context) {
         this.level = level;
         this.x = x;
         this.y = y;
-        this.path = path.replace('%s',side).replace('%l0',level-1).replace('%l',level).replace('%x',x).replace('%y',y);
+        // Use tile key if paths need to be looked up in a dictionary, which needs a `tileKey` entry
+        var p = typeof path === 'object' ? path.tileKey : path;
+        p = p.replace('%s',side).replace('%l0',level-1).replace('%l',level).replace('%x',x).replace('%y',y);
+        this.path = typeof path === 'object' ? path[p] : p;
         this.parentPath = parentPath;
     }
 
@@ -1147,13 +1169,79 @@ function Renderer(container, context) {
      * load its texture, and load appropriate child nodes.
      * @private
      * @param {number[]} rotPersp - Rotated perspective matrix.
+     * @param {number[]} rotPersp - Rotated perspective matrix without clipping behind camera.
      * @param {MultiresNode} node - Multires node to check.
      * @param {number} pitch - Pitch to check at.
      * @param {number} yaw - Yaw to check at.
      * @param {number} hfov - Horizontal field of view to check at.
      */
-    function testMultiresNode(rotPersp, node, pitch, yaw, hfov) {
+    function testMultiresNode(rotPersp, rotPerspNoClip, node, pitch, yaw, hfov) {
         if (checkSquareInView(rotPersp, node.vertices)) {
+            // In order to determine if this tile resolution needs to be loaded
+            // for this node, start by calculating positions of node corners
+            // and checking if they're in view
+            var cornersWinX = [],
+                cornersWinY = [],
+                minCornersWinZ = 2,
+                cornersInView = [],
+                numCornersInView = 0;
+            for (var i = 0; i < 4; i++) {
+                var corner = applyRotPerspToVec(rotPerspNoClip, node.vertices.slice(i * 3, (i + 1) * 3));
+                cornersWinX.push(corner[0] * corner[3]);
+                cornersWinY.push(corner[1] * corner[3]);
+                var cornerWinZ = corner[2] * corner[3];
+                minCornersWinZ = Math.min(minCornersWinZ, cornerWinZ);
+                cornersInView.push(Math.abs(cornersWinX[i]) <= 1 && Math.abs(cornersWinY[i]) <= 1 && cornerWinZ > 0);
+                numCornersInView += cornersInView[i];
+            }
+
+            var cubeSize = image.cubeResolution * Math.pow(2, node.level - image.maxLevel);
+            var numTiles = Math.ceil(cubeSize * image.invTileResolution) - 1;
+            var doubleTileSize = cubeSize % image.tileResolution * 2;
+            var lastTileSize = (cubeSize * 2) % image.tileResolution;
+            if (lastTileSize === 0) {
+                lastTileSize = image.tileResolution;
+            }
+            if (doubleTileSize === 0) {
+                doubleTileSize = image.tileResolution * 2;
+            }
+
+            // Tiles should always be loaded if they're base tiles, in the
+            // extremely-wide FOV edge case when a node corner is behind the
+            // camera, and when no node corners are in the viewport. In other
+            // cases, additional checks are required.
+            if (node.level > 1 && minCornersWinZ > 0 && numCornersInView > 0) {
+                // Calculate length of node sides that are at least partly in view
+                var maxSide = 0;
+                for (var i = 0; i < 4; i++) {
+                    var j = (i + 1) % 4;
+                    if (cornersInView[i] || cornersInView[j]) {
+                        var diffX = (cornersWinX[j] - cornersWinX[i]) * gl.drawingBufferWidth / 2,
+                            diffY = (cornersWinY[j] - cornersWinY[i]) * gl.drawingBufferHeight / 2;
+                        // Handle edge tiles
+                        if (lastTileSize < image.tileResolution) {
+                            if (node.x == numTiles)
+                                diffX *= image.tileResolution / lastTileSize;
+                            else if (node.y == numTiles)
+                                diffY *= image.tileResolution / lastTileSize;
+                        }
+                        // Handle small tiles that have fewer than four children
+                        if (doubleTileSize <= image.tileResolution) {
+                            if (node.x == numTiles)
+                                diffX *= 2;
+                            if (node.y == numTiles)
+                                diffY *= 2;
+                        }
+                        maxSide = Math.max(maxSide, Math.sqrt(diffX * diffX + diffY * diffY));
+                    }
+                }
+                // Don't load tile if the largest node side is smaller than
+                // half the tile resolution, since the parent node is smaller
+                // than the parent tile in this case
+                if (maxSide <= image.tileResolution / 2)
+                    return;
+            }
+
             // Calculate central angle between center of view and center of tile
             var v = node.vertices;
             var x = v[0] + v[3] + v[6] + v[ 9];
@@ -1184,20 +1272,9 @@ function Renderer(container, context) {
                 program.currentNodes.push(node);
                 program.nodeCache.push(node);
             }
-            
-            // TODO: Test error
+
             // Create child nodes
-            if (node.level < program.level) {
-                var cubeSize = image.cubeResolution * Math.pow(2, node.level - image.maxLevel);
-                var numTiles = Math.ceil(cubeSize * image.invTileResolution) - 1;
-                var doubleTileSize = cubeSize % image.tileResolution * 2;
-                var lastTileSize = (cubeSize * 2) % image.tileResolution;
-                if (lastTileSize === 0) {
-                    lastTileSize = image.tileResolution;
-                }
-                if (doubleTileSize === 0) {
-                    doubleTileSize = image.tileResolution * 2;
-                }
+            if (node.level < image.maxLevel) {
                 var f = 0.5;
                 if (node.x == numTiles || node.y == numTiles) {
                     f = 1.0 - image.tileResolution / (image.tileResolution + lastTileSize);
@@ -1284,7 +1361,7 @@ function Renderer(container, context) {
                     children.push(ntmp);
                 }
                 for (var j = 0; j < children.length; j++) {
-                    testMultiresNode(rotPersp, children[j], pitch, yaw, hfov);
+                    testMultiresNode(rotPersp, rotPerspNoClip, children[j], pitch, yaw, hfov);
                 }
             }
         }
@@ -1558,24 +1635,6 @@ function Renderer(container, context) {
     } else {
         processNextTile = processNextTileFallback;
     }
-
-    /**
-     * Finds and applies optimal multires zoom level.
-     * @private
-     * @param {number} hfov - Horizontal field of view to check at.
-     */
-    function checkZoom(hfov) {
-        // Find optimal level
-        var newLevel = 1;
-        while ( newLevel < image.maxLevel &&
-            gl.drawingBufferWidth > image.tileResolution *
-            Math.pow(2, newLevel - 1) * Math.tan(hfov / 2) * 0.707 ) {
-            newLevel++;
-        }
-        
-        // Apply change
-        program.level = newLevel;
-    }
     
     /**
      * Rotates perspective matrix.
@@ -1658,8 +1717,6 @@ function Renderer(container, context) {
             return false;
         var testZ = check1[2] + check2[2] + check3[2] + check4[2];
         return testZ != 4;
-        
-
     }
 
     /**
@@ -1941,13 +1998,14 @@ var fragMulti = [
 'void main(void) {',
     // Look up color from texture
     'gl_FragColor = texture2D(u_sampler, v_texCoord);',
+//    'if(v_texCoord.x > 0.99 || v_texCoord.y > 0.99 || v_texCoord.x < 0.01 || v_texCoord.y < 0.01) {gl_FragColor = vec4(0.0,0.0,0.0,1.0);}', // Draw tile edges
 //    'gl_FragColor = u_color;',
 '}'
 ].join('');
 
 return {
-    renderer: function(container, image, imagetype, dynamic) {
-        return new Renderer(container, image, imagetype, dynamic);
+    renderer: function(container, image, imagetype) {
+        return new Renderer(container, image, imagetype);
     }
 };
 
